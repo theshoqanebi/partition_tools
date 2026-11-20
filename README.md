@@ -27,6 +27,28 @@ The binaries are written to `bin/`, and intermediate files to `build/`.
 | `make clean`    | Delete `build/` and `bin/`                  |
 | `make CC=gcc CXX=g++` | Use another compiler (untested)       |
 
+### Windows (MinGW)
+
+Tested with [llvm-mingw](https://github.com/mstorsjo/llvm-mingw) (clang,
+x86_64) and Git for Windows. The recipes need a POSIX shell, so build from
+Git Bash or MSYS2:
+
+```
+mingw32-make -j8
+```
+
+From PowerShell or cmd, put Git's tools on `PATH` first:
+
+```
+$env:Path = "C:\Program Files\Git\usr\bin;$env:Path"
+mingw32-make -j8
+```
+
+This produces `bin/lpmake.exe`, `bin/lpunpack.exe`, `bin/lpadd.exe`,
+`bin/lpflash.exe` and `bin/lpdump.exe`. The Windows build uses the shims in
+`lib/compat/win32/` for headers MinGW does not provide, and `lpdump` only
+dumps image files (it cannot read device fstab or snapshot state).
+
 ## Tools
 
 | Tool       | Purpose                                                    |
