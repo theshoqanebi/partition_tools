@@ -23,6 +23,7 @@ endif
 
 ifdef WINDOWS
   LDFLAGS := -lws2_32
+  EXE := .exe
 endif
 
 BUILD := build
@@ -41,7 +42,7 @@ else
 endif
 
 .PHONY: all clean
-all: $(addprefix $(BIN)/,$(TOOLS))
+all: $(addsuffix $(EXE),$(addprefix $(BIN)/,$(TOOLS)))
 
 # $(call define_lib,<name>,<archive>,<srcdir>,<compile flags>,<sources relative to srcdir>)
 # Defines object rules and the archive rule for one static library.
@@ -80,10 +81,10 @@ $(eval $(call define_lib,base,libbase.a,$(L)/base,-std=c++17 -I$(L)/include,$(ba
 
 # ---- libsparse ----
 sparse_src := backed_block.cpp output_file.cpp sparse.cpp sparse_crc32.cpp sparse_err.cpp sparse_read.cpp
-$(eval $(call define_lib,sparse,libsparse.a,$(L)/libsparse,-std=c++17 -I$(L)/include,$(sparse_src)))
+$(eval $(call define_lib,sparse,libsparse.a,$(L)/libsparse,-std=c++17 -I$(L)/include -I$(L)/zlib,$(sparse_src)))
 
 # ---- fmtlib ----
-$(eval $(call define_lib,fmtlib,fmtlib.a,$(L)/fmtlib,-std=c++17 -I$(L)/fmtlib/include,src/format.cc))
+$(eval $(call define_lib,fmtlib,fmtlib.a,$(L)/fmtlib,-std=c++20 -I$(L)/fmtlib/include,src/format.cc))
 
 # ---- liblp ----
 lp_src := builder.cpp images.cpp partition_opener.cpp property_fetcher.cpp reader.cpp utility.cpp writer.cpp
@@ -452,7 +453,9 @@ crypto_src := \
 	src/crypto/x509v3/v3_utl.c \
 	src/third_party/fiat/curve25519.c \
 
+ifndef WINDOWS
 crypto_src += $(crypto_asm)
+endif
 
 $(eval $(call define_lib,crypto,libcrypto.a,$(L)/boringssl,-I$(L)/boringssl/include -std=c99 $(CRYPTO_DEFS) -DBORINGSSL_IMPLEMENTATION -fvisibility=hidden -DBORINGSSL_SHARED_LIBRARY -DBORINGSSL_ANDROID_SYSTEM -DOPENSSL_SMALL -D_XOPEN_SOURCE=700,$(crypto_src)))
 
@@ -539,7 +542,7 @@ protobuf_src := \
 	src/google/protobuf/wire_format.cc \
 	src/google/protobuf/wrappers.pb.cc \
 
-$(eval $(call define_lib,protobuf,libprotobuf-cpp-full.a,$(L)/protobuf,-std=c++17 -I$(L)/protobuf/src -I$(L)/protobuf/android -DHAVE_ZLIB=1,$(protobuf_src)))
+$(eval $(call define_lib,protobuf,libprotobuf-cpp-full.a,$(L)/protobuf,-std=c++17 -I$(L)/protobuf/src -I$(L)/protobuf/android -I$(L)/zlib -DHAVE_ZLIB=1,$(protobuf_src)))
 
 # ---- libjsonpb ----
 $(eval $(call define_lib,jsonpb,libjsonpbparse.a,$(L)/libjsonpb,-std=c++17 -I$(L)/include -I$(L)/libjsonpb/parse/include,parse/jsonpb.cpp))
@@ -551,17 +554,20 @@ BASE_LIBS := $(addprefix $(LIBS)/,liblp.a libsparse.a libext4_utils.a libz.a lib
 LPDUMP_LIBS := $(addprefix $(LIBS)/,libjsonpbparse.a libprotobuf-cpp-full.a)
 
 TOOL_FLAGS := -std=c++17 -I$(L)/include -I$(L)/fmtlib/include $(CFLAGS) -D_FILE_OFFSET_BITS=64
+ifdef WINDOWS
+  TOOL_FLAGS += -std=c++20 -I$(L)/compat/win32 -include $(L)/compat/win32/binmode.h -DWIN32
+endif
 
 lpdump_src := $(PT)/lpdump.cc $(PT)/dynamic_partitions_device_info.pb.cc $(PT)/lpdump_host.cc
 
-$(BIN)/lpdump: $(lpdump_src) $(BASE_LIBS) $(LPDUMP_LIBS)
+$(BIN)/lpdump$(EXE): $(lpdump_src) $(BASE_LIBS) $(LPDUMP_LIBS)
 	@mkdir -p $(@D)
 	$(call log,LD,$@)
 	$(Q)$(CXX) $(TOOL_FLAGS) -o $@ $(lpdump_src) $(BASE_LIBS) $(LPDUMP_LIBS) -lpthread $(LDFLAGS)
 	$(call log,STRIP,$@)
 	$(Q)$(STRIP) $@
 
-$(BIN)/%: $(PT)/%.cc $(BASE_LIBS)
+$(BIN)/%$(EXE): $(PT)/%.cc $(BASE_LIBS)
 	@mkdir -p $(@D)
 	$(call log,LD,$@)
 	$(Q)$(CXX) $(TOOL_FLAGS) -o $@ $< $(BASE_LIBS) -lpthread $(LDFLAGS)

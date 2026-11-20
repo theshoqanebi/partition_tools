@@ -419,7 +419,24 @@ bool Readlink(const std::string& path, std::string* result) {
 }
 #endif
 
-#if !defined(_WIN32)
+#if defined(_WIN32)
+bool Realpath(const std::string& path, std::string* result) {
+  result->clear();
+  char* resolved = _fullpath(nullptr, path.c_str(), 0);
+  if (resolved == nullptr) {
+    return false;
+  }
+  // Like realpath(3), fail if the path does not exist.
+  if (GetFileAttributesA(resolved) == INVALID_FILE_ATTRIBUTES) {
+    free(resolved);
+    errno = ENOENT;
+    return false;
+  }
+  result->assign(resolved);
+  free(resolved);
+  return true;
+}
+#else
 bool Realpath(const std::string& path, std::string* result) {
   result->clear();
 

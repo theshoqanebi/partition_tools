@@ -108,8 +108,8 @@ bool WriteFully(borrowed_fd fd, const void* data, size_t byte_count);
 
 bool RemoveFileIfExists(const std::string& path, std::string* err = nullptr);
 
-#if !defined(_WIN32)
 bool Realpath(const std::string& path, std::string* result);
+#if !defined(_WIN32)
 bool Readlink(const std::string& path, std::string* result);
 #endif
 

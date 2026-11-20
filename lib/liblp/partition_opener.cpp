@@ -41,6 +41,12 @@ std::string GetPartitionAbsolutePath(const std::string& path) {
     if (android::base::StartsWith(path, "/")) {
         return path;
     }
+#ifdef _WIN32
+    // Drive-letter (C:\...) and UNC (\...) paths are already absolute.
+    if ((path.size() >= 2 && path[1] == ':') || android::base::StartsWith(path, "\\")) {
+        return path;
+    }
+#endif
 
     auto by_name = "/dev/block/by-name/" + path;
     if (access(by_name.c_str(), F_OK) != 0) {
