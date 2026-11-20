@@ -49,6 +49,32 @@ This produces `bin/lpmake.exe`, `bin/lpunpack.exe`, `bin/lpadd.exe`,
 `lib/compat/win32/` for headers MinGW does not provide, and `lpdump` only
 dumps image files (it cannot read device fstab or snapshot state).
 
+### Android (NDK)
+
+Cross-builds static Android binaries with the NDK (tested with r28, from
+Windows/Git Bash):
+
+```
+make -j8 ANDROID=1
+```
+
+The NDK is taken from `ANDROID_NDK_HOME` / `ANDROID_NDK_ROOT`, or the newest
+one under `$ANDROID_HOME/ndk` (`%LOCALAPPDATA%\Android\Sdk\ndk` on Windows).
+
+| Variable                  | Default     | Description                                   |
+| ------------------------- | ----------- | --------------------------------------------- |
+| `ANDROID_ABI`             | `arm64-v8a` | Also `armeabi-v7a`, `x86_64`, `x86`           |
+| `ANDROID_API`             | `30`        | Minimum API level (29 or newer is required)   |
+
+Binaries are written to `bin/android-<abi>/`. Copy them to the device with
+`adb push` (e.g. to `/data/local/tmp`) and run them from there.
+
+`lpdump` is not built for Android: its on-device code needs `fs_mgr` and
+`libsnapshot`, which are not in `lib/`. `lpmake` and `lpunpack` were
+verified on an arm64 device. `lpadd` fails there with a permission error on
+`/dev/block/by-name/super`, because upstream `lpadd` always looks up the
+super block device by name.
+
 ## Tools
 
 | Tool       | Purpose                                                    |

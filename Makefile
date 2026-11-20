@@ -3,6 +3,7 @@
 #   make          build everything into bin/
 #   make -j8      parallel build
 #   make clean    delete build/ and bin/
+#   make ANDROID=1  cross-build for Android with the NDK (see below)
 #
 # Override tools on the command line, e.g. `make CC=gcc CXX=g++`.
 
@@ -27,16 +28,74 @@ else
   endif
 endif
 
+# ---- Android (NDK) cross build ----
+#   make ANDROID=1                          arm64-v8a, API 30
+#   make ANDROID=1 ANDROID_ABI=x86_64       also: armeabi-v7a, x86
+#   make ANDROID=1 ANDROID_API=33
+# The NDK is taken from ANDROID_NDK_HOME / ANDROID_NDK_ROOT, or the newest
+# one under $ANDROID_HOME/ndk (or %LOCALAPPDATA%/Android/Sdk/ndk on Windows).
+ifdef ANDROID
+  ANDROID_ABI ?= arm64-v8a
+  ANDROID_API ?= 30
+  ifeq ($(ANDROID_ABI),arm64-v8a)
+    ARCH := aarch64
+    NDK_TRIPLE := aarch64-linux-android
+  else ifeq ($(ANDROID_ABI),armeabi-v7a)
+    ARCH := arm
+    NDK_TRIPLE := armv7a-linux-androideabi
+  else ifeq ($(ANDROID_ABI),x86_64)
+    ARCH := x86_64
+    NDK_TRIPLE := x86_64-linux-android
+  else ifeq ($(ANDROID_ABI),x86)
+    ARCH := i686
+    NDK_TRIPLE := i686-linux-android
+  else
+    $(error Unsupported ANDROID_ABI '$(ANDROID_ABI)': use arm64-v8a, armeabi-v7a, x86_64 or x86)
+  endif
+  ifeq ($(OS),Windows_NT)
+    NDK_HOST := windows-x86_64
+    NDK_SDK  := $(or $(ANDROID_HOME),$(ANDROID_SDK_ROOT),$(subst \,/,$(LOCALAPPDATA))/Android/Sdk)
+  else ifeq ($(UNAME_S),Darwin)
+    NDK_HOST := darwin-x86_64
+    NDK_SDK  := $(or $(ANDROID_HOME),$(ANDROID_SDK_ROOT),$(HOME)/Library/Android/sdk)
+  else
+    NDK_HOST := linux-x86_64
+    NDK_SDK  := $(or $(ANDROID_HOME),$(ANDROID_SDK_ROOT),$(HOME)/Android/Sdk)
+  endif
+  ANDROID_NDK := $(or $(ANDROID_NDK_HOME),$(ANDROID_NDK_ROOT),$(lastword $(sort $(wildcard $(NDK_SDK)/ndk/*))))
+  ifeq ($(ANDROID_NDK),)
+    $(error NDK not found: set ANDROID_NDK_HOME)
+  endif
+  NDK_BIN := $(ANDROID_NDK)/toolchains/llvm/prebuilt/$(NDK_HOST)/bin
+  CC      := $(NDK_BIN)/$(NDK_TRIPLE)$(ANDROID_API)-clang
+  CXX     := $(NDK_BIN)/$(NDK_TRIPLE)$(ANDROID_API)-clang++
+  AR      := $(NDK_BIN)/llvm-ar
+  STRIP   := $(NDK_BIN)/llvm-strip
+  # Target is Android, whatever the host is.
+  WINDOWS :=
+  # bionic has no PAGE_SIZE and libc++ dropped std::unary_function.
+  CFLAGS  += -DPAGE_SIZE=4096 -D_LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION
+endif
+
 ifdef WINDOWS
   LDFLAGS := -lws2_32
   EXE := .exe
 endif
 
-BUILD := build
-BIN   := bin
+ifdef ANDROID
+  BUILD := build/android-$(ANDROID_ABI)
+  BIN   := bin/android-$(ANDROID_ABI)
+else
+  BUILD := build
+  BIN   := bin
+endif
 LIBS  := $(BUILD)/lib
 L     := lib
 TOOLS := lpmake lpadd lpflash lpunpack lpdump
+ifdef ANDROID
+  # lpdump's on-device code needs fs_mgr and libsnapshot, which are not in lib/.
+  TOOLS := $(filter-out lpdump,$(TOOLS))
+endif
 
 # Quiet, kernel-style output by default; use `make V=1` to see full commands.
 ifeq ($(V),1)
@@ -68,6 +127,10 @@ endef
 # ---- liblog ----
 ifndef WINDOWS
   liblog_extra := event_tag_map.cpp
+endif
+ifdef ANDROID
+  # On Android, liblog also talks to logd and pmsg.
+  liblog_extra += logd_writer.cpp pmsg_writer.cpp
 endif
 liblog_src := log_event_list.cpp log_event_write.cpp logger_name.cpp logger_read.cpp logger_write.cpp logprint.cpp properties.cpp $(liblog_extra)
 $(eval $(call define_lib,liblog,liblog.a,$(L)/liblog,-std=c++17 -I$(L)/include -I$(L)/liblog/include -I$(L)/base/include -DLIBLOG_LOG_TAG=1006 -DSNET_EVENT_LOG_TAG=1397638484,$(liblog_src)))
@@ -550,6 +613,11 @@ protobuf_src := \
 
 $(eval $(call define_lib,protobuf,libprotobuf-cpp-full.a,$(L)/protobuf,-std=c++17 -I$(L)/protobuf/src -I$(L)/protobuf/android -I$(L)/zlib -DHAVE_ZLIB=1,$(protobuf_src)))
 
+# ---- libcutils (Android only, for android_get_control_file) ----
+ifdef ANDROID
+$(eval $(call define_lib,cutils,libcutils.a,$(L)/libcutils,-std=c++17 -I$(L)/include -I$(L)/libcutils,android_get_control_file.cpp))
+endif
+
 # ---- libjsonpb ----
 $(eval $(call define_lib,jsonpb,libjsonpbparse.a,$(L)/libjsonpb,-std=c++17 -I$(L)/include -I$(L)/libjsonpb/parse/include,parse/jsonpb.cpp))
 
@@ -557,9 +625,19 @@ $(eval $(call define_lib,jsonpb,libjsonpbparse.a,$(L)/libjsonpb,-std=c++17 -I$(L
 PT := partition_tools
 
 BASE_LIBS := $(addprefix $(LIBS)/,liblp.a libsparse.a libext4_utils.a libz.a libbase.a fmtlib.a liblog.a libcrypto_utils.a libcrypto.a)
+ifdef ANDROID
+  BASE_LIBS += $(LIBS)/libcutils.a
+endif
 LPDUMP_LIBS := $(addprefix $(LIBS)/,libjsonpbparse.a libprotobuf-cpp-full.a)
 
 TOOL_FLAGS := -std=c++17 -I$(L)/include -I$(L)/fmtlib/include $(CFLAGS) -D_FILE_OFFSET_BITS=64
+ifdef ANDROID
+  # bionic has no libpthread (it is part of libc), and fmt needs C++20 char8_t.
+  PTHREAD :=
+  TOOL_FLAGS += -std=c++20
+else
+  PTHREAD := -lpthread
+endif
 ifdef WINDOWS
   TOOL_FLAGS += -std=c++20 -I$(L)/compat/win32 -include $(L)/compat/win32/binmode.h -DWIN32
 endif
@@ -569,14 +647,14 @@ lpdump_src := $(PT)/lpdump.cc $(PT)/dynamic_partitions_device_info.pb.cc $(PT)/l
 $(BIN)/lpdump$(EXE): $(lpdump_src) $(BASE_LIBS) $(LPDUMP_LIBS)
 	@mkdir -p $(@D)
 	$(call log,LD,$@)
-	$(Q)$(CXX) $(TOOL_FLAGS) -o $@ $(lpdump_src) $(BASE_LIBS) $(LPDUMP_LIBS) -lpthread $(LDFLAGS)
+	$(Q)$(CXX) $(TOOL_FLAGS) -o $@ $(lpdump_src) $(BASE_LIBS) $(LPDUMP_LIBS) $(PTHREAD) $(LDFLAGS)
 	$(call log,STRIP,$@)
 	$(Q)$(STRIP) $@
 
 $(BIN)/%$(EXE): $(PT)/%.cc $(BASE_LIBS)
 	@mkdir -p $(@D)
 	$(call log,LD,$@)
-	$(Q)$(CXX) $(TOOL_FLAGS) -o $@ $< $(BASE_LIBS) -lpthread $(LDFLAGS)
+	$(Q)$(CXX) $(TOOL_FLAGS) -o $@ $< $(BASE_LIBS) $(PTHREAD) $(LDFLAGS)
 	$(call log,STRIP,$@)
 	$(Q)$(STRIP) $@
 
