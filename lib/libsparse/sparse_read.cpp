@@ -461,17 +461,62 @@ static int sparse_file_read_normal(struct sparse_file* s, int fd) {
   return 0;
 }
 
-int sparse_file_read(struct sparse_file* s, int fd, bool sparse, bool crc) {
-  if (crc && !sparse) {
+#if defined(SEEK_DATA) && defined(SEEK_HOLE)
+static int sparse_file_read_hole(struct sparse_file* s, int fd) {
+  int ret;
+  int64_t end = 0;
+  int64_t start = 0;
+
+  do {
+    start = lseek64(fd, end, SEEK_DATA);
+    if (start < 0) {
+      if (errno == ENXIO) {
+        // No more data
+        break;
+      }
+      return -errno;
+    }
+
+    end = lseek64(fd, start, SEEK_HOLE);
+    if (end < 0) {
+      return -errno;
+    }
+    start = start / s->block_size * s->block_size;
+    end = (end + s->block_size - 1) / s->block_size * s->block_size;
+    if (lseek64(fd, start, SEEK_SET) < 0) {
+      return -errno;
+    }
+
+    ret = sparse_file_add_fd(s, fd, start, end - start, start / s->block_size);
+    if (ret) {
+      return ret;
+    }
+  } while (end < s->len);
+
+  return 0;
+}
+#else
+static int sparse_file_read_hole(struct sparse_file*, int) {
+  return -ENOTSUP;
+}
+#endif
+
+int sparse_file_read(struct sparse_file* s, int fd, enum sparse_read_mode mode, bool crc) {
+  if (crc && mode != SPARSE_READ_MODE_SPARSE) {
     return -EINVAL;
   }
 
-  if (sparse) {
-    SparseFileFdSource source(fd);
-    return sparse_file_read_sparse(s, &source, crc);
-  } else {
-    return sparse_file_read_normal(s, fd);
+  switch (mode) {
+    case SPARSE_READ_MODE_SPARSE: {
+      SparseFileFdSource source(fd);
+      return sparse_file_read_sparse(s, &source, crc);
+    }
+    case SPARSE_READ_MODE_NORMAL:
+      return sparse_file_read_normal(s, fd);
+    case SPARSE_READ_MODE_HOLE:
+      return sparse_file_read_hole(s, fd);
   }
+  return -EINVAL;
 }
 
 int sparse_file_read_buf(struct sparse_file* s, char* buf, bool crc) {

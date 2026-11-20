@@ -550,7 +550,7 @@ PT := partition_tools
 BASE_LIBS := $(addprefix $(LIBS)/,liblp.a libsparse.a libext4_utils.a libz.a libbase.a fmtlib.a liblog.a libcrypto_utils.a libcrypto.a)
 LPDUMP_LIBS := $(addprefix $(LIBS)/,libjsonpbparse.a libprotobuf-cpp-full.a)
 
-TOOL_FLAGS := -std=c++17 -I$(L)/include $(CFLAGS) -D_FILE_OFFSET_BITS=64
+TOOL_FLAGS := -std=c++17 -I$(L)/include -I$(L)/fmtlib/include $(CFLAGS) -D_FILE_OFFSET_BITS=64
 
 lpdump_src := $(PT)/lpdump.cc $(PT)/dynamic_partitions_device_info.pb.cc $(PT)/lpdump_host.cc
 

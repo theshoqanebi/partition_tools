@@ -232,18 +232,28 @@ int sparse_file_foreach_chunk(struct sparse_file *s, bool sparse, bool crc,
  *
  * @s - sparse file cookie
  * @fd - file descriptor to read from
- * @sparse - read a file in the Android sparse file format
+ * @mode - mode to use when reading the input file
+ *	SPARSE_READ_MODE_NORMAL - the input file is a regular file; it is
+ *		sparsed by looking for block aligned chunks of all zeros or
+ *		another 32 bit value
+ *	SPARSE_READ_MODE_SPARSE - the input file is in the Android sparse file
+ *		format
+ *	SPARSE_READ_MODE_HOLE - the input file is a regular file; it is sparsed
+ *		by looking for holes in the file (SEEK_DATA / SEEK_HOLE)
  * @crc - verify the crc of a file in the Android sparse file format
  *
- * Reads a file into a sparse file cookie.  If sparse is true, the file is
- * assumed to be in the Android sparse file format.  If sparse is false, the
- * file will be sparsed by looking for block aligned chunks of all zeros or
- * another 32 bit value.  If crc is true, the crc of the sparse file will be
- * verified.
+ * Reads a file into a sparse file cookie.  If crc is true, the crc of the
+ * sparse file will be verified (only valid with SPARSE_READ_MODE_SPARSE).
  *
  * Returns 0 on success, negative errno on error.
  */
-int sparse_file_read(struct sparse_file *s, int fd, bool sparse, bool crc);
+enum sparse_read_mode {
+	SPARSE_READ_MODE_NORMAL = 0,
+	SPARSE_READ_MODE_SPARSE,
+	SPARSE_READ_MODE_HOLE,
+};
+
+int sparse_file_read(struct sparse_file *s, int fd, enum sparse_read_mode mode, bool crc);
 
 /**
  * sparse_file_read_buf - read a buffer into a sparse file cookie
