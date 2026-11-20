@@ -1,6 +1,6 @@
 # lpunpack and lpmake
 
 build :
-./make.sh
+make -j$(nproc)
 
 source code from aosp
