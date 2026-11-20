@@ -12,13 +12,19 @@ AR      := ar
 STRIP   := strip
 CFLAGS  := -static
 
-UNAME_S := $(shell uname -s)
-ARCH    := $(shell uname -m)
-
 ifeq ($(OS),Windows_NT)
   WINDOWS := 1
-else ifeq ($(filter Linux Darwin,$(UNAME_S)),)
-  WINDOWS := 1
+  # The recipes need a POSIX shell (sh, mkdir -p, printf, rm). Use Git Bash or
+  # MSYS2, or put Git's usr/bin directory on PATH.
+  ifeq ($(shell sh -c "echo ok"),)
+    $(error No POSIX shell found: run make from Git Bash/MSYS2, or add Git's usr/bin to PATH)
+  endif
+else
+  UNAME_S := $(shell uname -s)
+  ARCH    := $(shell uname -m)
+  ifeq ($(filter Linux Darwin,$(UNAME_S)),)
+    WINDOWS := 1
+  endif
 endif
 
 ifdef WINDOWS
